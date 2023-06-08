@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  nginx:
+    build:
+      context: ./nginx
+    restart: always
+    volumes:
+      - local_static:/var/www/local_static/
+      - nuxt:/var/www/nuxt:ro
+      - static:/var/www/static/:ro
+      - acme.sh:/acme.sh:delegated
+      - certs:/etc/nginx/certs
+    environment:
+      - ENVIRONMENT=production
+      - SITE_HOST
+      - MONITORING_HTPASSWD
+      - HTPASSWD
+
+    ports:
+      - 80:80
+      - 443:443
+
+    logging:
+      driver: journald
+      options:
+        tag: nginx
+
+  backend:
+    restart: always
+    build:
+      context: ./backend
+      args:
+        POETRY_PARAMS: "--no-dev"
+    entrypoint: ./entrypoint.production.sh
+    command: >
+      gunicorn config.wsgi:application -w ${GUNICORN_WORKERS:-5} --keep-alive 120 -b 0.0.0.0:8000
+      --max-requests 10000 --max-requests-jitter 1000 --access-logfile - --error-logfile -
+      --access-logformat '{"date":"%(t)s","method":"%(m)s","path":"%(U)s","query":"%(q)s","protocol":"%(H)s","status":%(s)s,"response_size":%(B)s,"referer":"%(f)s","user_agent":"%(a)s","time":%(D)s,"ip":"%({x-real-ip}i)s"}'
+    environment:
+      - DEBUG=False
+    depends_on:
+      - db
+    volumes:
+      - static:/app/static/:delegated
+    logging:
+      driver: journald
+      options:
+        tag: backend
+
+  redis:
+    restart: always
+    logging:
+      driver: journald
+      options:
+        tag: redis
+
+volumes:
+  local_static:
+  nuxt:
+  acme.sh:
+  certs:
+  static:
+  redisdata:
+  postgresdata:
